@@ -2,7 +2,7 @@ from jsonmodels import models, fields, errors, validators
 
 class Date(models.Base):
     expression = fields.StringField(required=True)
-    begin = fields.StringField(required=True)
+    begin = fields.StringField()
     end = fields.StringField()
     date_type = fields.StringField()
 

@@ -2,9 +2,8 @@ import copy
 import pysolr
 from description_indexer.models.arclight import SolrCollection, SolrComponent
 
+
 class Arclight():
-
-
     def __init__(self, solr_url):
         """
         Connects to an accessible Solr instance with pysolr.
@@ -15,15 +14,12 @@ class Arclight():
 
         self.solr = pysolr.Solr(solr_url, always_commit=True)
         self.solr.ping()
-        
 
     def convert(self, record):
-
         has_online_content = set()
-
-        print(f"converting to {record.id} to Solr documents...")
+        print(f"converting {record.id} to Solr documents...")
         solrDocument, has_online_content = self.convertCollection(record, has_online_content)
-        
+
         if len(has_online_content) > 0:
             if solrDocument.id in has_online_content:
                 solrDocument.has_online_content_ssim = ["true"]
@@ -32,7 +28,7 @@ class Arclight():
         return solrDocument
 
     def mark_online_content(self, solrComponent, has_online_content):
-        
+
         for component in solrComponent.components:
             if component.ref_ssi in has_online_content:
                 component.has_online_content_ssim = ["true"]
@@ -40,9 +36,8 @@ class Arclight():
 
         return solrComponent
 
-
-
-    def convertCollection(self, record, has_online_content, recursive_level=0, parents=[], parent_titles=[], parent_levels=[], inherited_data={}):
+    def convertCollection(self, record, has_online_content, recursive_level=0, parents=[], parent_titles=[],
+                          parent_levels=[], inherited_data={}):
         """
         A recursive function to convert collection and component objects to Arclight-friendly solr docs.
         It takes a component object and converts it and any child objects to an Arclight-friendly
@@ -83,17 +78,19 @@ class Arclight():
                 normalized_date = "bulk "
             else:
                 normalized_date = ""
-            if hasattr(date, "expression") and date.expression != None:
+            if hasattr(date, "expression") and date.expression is not None:
                 dates.append(date.expression)
                 normalized_date += date.expression
-            elif hasattr(date, "end") and date.end != None:
+            elif hasattr(date, "end") and date.end is not None:
                 dates.append(f"{date.begin}-{date.end}")
                 normalized_date = f"{normalized_date}{date.begin}-{date.end}"
             else:
                 dates.append(date.begin)
                 normalized_date += date.begin
-            date_range.append(int(date.begin.split("-")[0]))
-            if hasattr(date, "end") and date.end != None:
+
+            if hasattr(date, "begin") and date.end is not None:
+                date_range.append(int(date.begin.split("-")[0]))
+            if hasattr(date, "end") and date.end is not None:
                 date_range.append(int(date.end.split("-")[0]))
             normalized_dates.append(normalized_date)
         solrDocument.date_range_sim = date_range
@@ -123,7 +120,7 @@ class Arclight():
         else:
             record.component_level_isim = [recursive_level]
 
-            #Arclight expects the collection id to be prepended to component ids but not to ref_ssm
+            # Arclight expects the collection id to be prepended to component ids but not to ref_ssm
             solrDocument.id = record.collection_id.replace(".", "-") + record.id.replace(".", "-")
             solrDocument.ref_ssi = record.id.replace(".", "-")
             # dunno why this is duplicated, but it seems to be like this in the default indexer
@@ -135,7 +132,7 @@ class Arclight():
                 solrDocument.collection_creator_ssm = inherited_data['collection_creator']
 
             solrDocument.parent_ssim = parents
-            #solrDocument.parent_ssm = parents
+            # solrDocument.parent_ssm = parents
             # parent_ssi appears to be only the immediate parent
             if len(parents) > 0:
                 solrDocument.parent_ssi = [parents[-1]]
@@ -157,7 +154,7 @@ class Arclight():
             new_parent_levels = copy.deepcopy(parent_levels)
             new_parent_levels.append(record.level)
 
-        solrDocument.repository_ssm = [record.repository] #this is wrong locally
+        solrDocument.repository_ssm = [record.repository]  # this is wrong locally
         solrDocument.repository_sim = [record.repository]
 
         solrDocument.level_ssm = [record.level.title()]
@@ -177,7 +174,8 @@ class Arclight():
             "family": "famname_ssm",
             "person": "persname_ssm"
         }
-        # Agents are wonky in the default indexer which this recreates, but it should probably be thought out better. I don't have great data to do it right
+        # Agents are wonky in the default indexer which this recreates,
+        # but it should probably be thought out better. I don't have great data to do it right
         creators = []
         names = []
         for creator in record.creators:
@@ -185,7 +183,8 @@ class Arclight():
             if creator.agent_type in agent_translations.keys():
                 setattr(solrDocument, agent_translations[creator.agent_type], [creator.name])
                 setattr(solrDocument, "creator_" + agent_translations[creator.agent_type], [creator.name])
-                setattr(solrDocument, "creator_" + agent_translations[creator.agent_type].rsplit("_", 1)[0] + "_ssim", [creator.name])
+                setattr(solrDocument, "creator_" + agent_translations[creator.agent_type].rsplit("_", 1)[0] + "_ssim",
+                        [creator.name])
             else:
                 names.append(creator.name)
         solrDocument.creator_ssm = creators
@@ -197,7 +196,7 @@ class Arclight():
                 setattr(solrDocument, agent_translations[name.agent_type], [name.name])
         solrDocument.names_ssim = names
         # I stopped implementing this until agents are reworked, as its not used by the UI
-        #solrDocument.names_coll_ssim
+        # solrDocument.names_coll_ssim
 
         # Seems imprecise, but this is how what the exiting indexer does.
         solrDocument.access_subjects_ssm = record.subjects
@@ -248,7 +247,7 @@ class Arclight():
                     inherited_data["parent_access_terms"].extend(note_text)
 
         # Containers
-        # This is a bit nuts, but it was just as much code as a function so I left it explicit
+        # This is a bit nuts, but it was just as much code as a function, so I left it explicit
         containers_ssim = []
         for container in record.containers:
             container_string = []
@@ -290,12 +289,14 @@ class Arclight():
 
         for component in record.components:
             inherited_data["child_component_count"] = len(component.components)
-            subcomponent, has_online_content = self.convertCollection(component, has_online_content, recursive_level, new_parents, new_parent_titles, new_parent_levels, inherited_data)
+            subcomponent, has_online_content = self.convertCollection(component, has_online_content, recursive_level,
+                                                                      new_parents, new_parent_titles, new_parent_levels,
+                                                                      inherited_data)
             solrDocument.components.append(subcomponent)
 
         return solrDocument, has_online_content
 
     def post(self, collection):
 
-        print ("POSTing data to Solr...")
+        print("POSTing data to Solr...")
         self.solr.add([collection.to_struct()])

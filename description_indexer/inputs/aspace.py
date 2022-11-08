@@ -1,11 +1,14 @@
 import sys
-from iso639 import languages
-from asnake.client import ASnakeClient
+
 import asnake.logging as logging
+from asnake.client import ASnakeClient
+from iso639 import languages
+
 from description_indexer.models.description import Component, Date, Extent, Agent, Container, DigitalObject
 from description_indexer.utils import iso2DACS
 
 logging.setup_logging(stream=sys.stdout, level='INFO')
+
 
 class ArchivesSpace():
     """This class connects to an ArchivesSpace repository"""
@@ -49,9 +52,9 @@ class ArchivesSpace():
             resource = self.client.get(resources.json()['resources'][0]['ref']).json()
 
         if resource["publish"] != True:
-            print (f"Skipping unpublished resource {resource['id_0']}")
+            print(f"Skipping unpublished resource {resource['id_0']}")
         else:
-            eadid = resource["ead_id"]
+            eadid = self.record_id(resource)
             tree = self.client.get(resource['tree']['ref']).json()
             record = self.readToModel(resource, eadid, tree)
 
@@ -70,25 +73,31 @@ class ArchivesSpace():
         """
 
         resource = self.client.get(f'repositories/{str(self.repo)}/resources/{str(uri)}').json()
-        
-        if resource["publish"] != True:
-            print ("Unpublished record")
+
+        if not resource["publish"]:
+            print("Unpublished record, skipping ...")
         else:
-            eadid = resource["ead_id"]
-            
+            eadid = self.record_id(resource)
             tree = self.client.get(resource['tree']['ref']).json()
             record = self.readToModel(resource, eadid, tree)
-            
+
             return record
-    
+
+    def record_id(self, resource):
+        if "ead_id" in resource:
+            return resource["ead_id"]
+        else:
+            return resource["uri"].split("/")[-1]
+
     def read_since(self, last_run_time):
 
         records = []
-        modifiedList = self.client.get(f'repositories/{str(self.repo)}/resources?all_ids=true&modified_since={str(last_run_time)}').json()
+        modifiedList = self.client.get(
+            f'repositories/{str(self.repo)}/resources?all_ids=true&modified_since={str(last_run_time)}').json()
         if len(modifiedList) < 1:
-            print ("No collections modified since last run.")
+            print("No collections modified since last run.")
         else:
-            print (modifiedList)
+            print(modifiedList)
             for collection_uri in modifiedList:
                 record = self.read_uri(int(collection_uri))
                 records.append(record)
@@ -112,23 +121,27 @@ class ArchivesSpace():
         """
 
         # Print the name of the object being read, correctly indented        
-        indent = recursive_level*"\t"
-        print (f"{indent}Reading {apiObject['title']}...")
-        
+        indent = recursive_level * "\t"
+        print(f"{indent}Reading {apiObject['title']}...")
+
         record = Component()
-        
+
         record.title = apiObject["title"]
         record.repository = self.repo_name
         record.level = apiObject["level"]
 
         for date in apiObject["dates"]:
             dateObj = Date()
-            dateObj.begin = date['begin']
+
             if date['date_type'].lower() == "bulk":
                 dateObj.date_type = "bulk"
             elif date['date_type'].lower() == "inclusive":
                 dateObj.date_type = "inclusive"
-            if "end" in date.keys():
+
+            if "begin" in date:
+                dateObj.begin = date['begin']
+
+            if "end" in date:
                 dateObj.end = date['end']
 
             if "expression" in date.keys():
@@ -138,10 +151,11 @@ class ArchivesSpace():
             else:
                 dateObj.expression = iso2DACS(date['begin'])
             record.dates.append(dateObj)
-        
+
         if apiObject["level"].lower() == "collection":
-            record.id = apiObject["ead_id"]
-            record.collection_id = apiObject["ead_id"]
+            id_value = self.record_id(apiObject)
+            record.id = id_value
+            record.collection_id = id_value
             record.collection_name = apiObject["title"]
             collection_name = record.collection_name
         else:
@@ -172,7 +186,7 @@ class ArchivesSpace():
         for agent_ref in apiObject['linked_agents']:
             agent = self.client.get(agent_ref['ref']).json()
             agentObj = Agent()
-            agentObj.name  = agent['title']
+            agentObj.name = agent['title']
             agentObj.agent_type = agent['agent_type'].split("agent_")[1]
             if agent_ref['role'] == "creator":
                 record.creators.append(agentObj)
@@ -229,7 +243,7 @@ class ArchivesSpace():
                 record.containers.append(container)
             elif instance['instance_type'] == "digital_object":
                 digital_object = self.client.get(instance['digital_object']['ref']).json()
-                if digital_object['publish'] == True:
+                if digital_object['publish']:
                     if "file_versions" in digital_object.keys() and len(digital_object['file_versions']) > 0:
                         dao = DigitalObject()
                         dao_title = digital_object['title']
@@ -244,12 +258,12 @@ class ArchivesSpace():
                                     dao.label = dao_title
                                     record.digital_objects.append(dao)
 
-        
         recursive_level += 1
 
-        for child in tree['children']:
-            component = self.client.get(child['record_uri']).json()            
-            subrecord = self.readToModel(component, eadid, child, collection_name, recursive_level)
-            record.components.append(subrecord)
+        if 'children' in tree:
+            for child in tree['children']:
+                component = self.client.get(child['record_uri']).json()
+                subrecord = self.readToModel(component, eadid, child, collection_name, recursive_level)
+                record.components.append(subrecord)
 
         return record
